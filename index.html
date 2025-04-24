@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Analyzer</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 2rem;
+    }
+
+    #controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    #controls input {
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      width: 220px;
+      background: #222;
+      color: #fff;
+    }
+
+    #controls button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-blue {
+      background: #007bff;
+      color: #fff;
+    }
+
+    .btn-green {
+      background: #28a745;
+      color: #fff;
+    }
+
+    #result {
+      background: #222;
+      padding: 1.5rem;
+      border-radius: 8px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      display: none;
+    }
+
+    #result h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+    }
+
+    #factors {
+      margin-top: 1rem;
+      font-family: Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    #ai-result {
+      margin-top: 1rem;
+      background: #333;
+      padding: 1rem;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      white-space: pre-wrap;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Stock Analyzer</h1>
+
+  <div id="controls">
+    <input id="ticker" placeholder="e.g. AAPL" />
+    <button id="analyzeBtn" class="btn-blue">Analyze</button>
+    <button id="aiBtn" class="btn-green">Analyze with AI</button>
+  </div>
+
+  <div id="result">
+    <h2 id="header">Analysis for –</h2>
+    <div id="price">Current Price: –</div>
+    <div id="recommendation">Recommendation: –</div>
+    <div id="factors"></div>
+    <div id="ai-result"></div>
+  </div>
+
+  <script>
+    const tickerInput = document.getElementById('ticker');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const aiBtn = document.getElementById('aiBtn');
+    const resultDiv = document.getElementById('result');
+    const headerH2 = document.getElementById('header');
+    const priceDiv = document.getElementById('price');
+    const recDiv = document.getElementById('recommendation');
+    const factorsDiv = document.getElementById('factors');
+    const aiDiv = document.getElementById('ai-result');
+    let lastTicker;
+
+    const labels = {
+      return_6mo: "6-Month Return",
+      rsi_14: "14-Day RSI",
+      sma_50: "50-Day SMA",
+      sma_200: "200-Day SMA",
+      macd: "MACD",
+      macd_signal: "MACD Signal",
+      bb_upper: "Bollinger Upper (20d)",
+      bb_lower: "Bollinger Lower (20d)",
+      atr_14: "ATR (14d)"
+    };
+
+    async function doAnalyze() {
+      const ticker = tickerInput.value.trim().toUpperCase();
+      if (!ticker) return alert('Enter a ticker.');
+
+      let resp, text;
+      try {
+        resp = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker })
+        });
+        text = await resp.text();
+        console.log('[DEBUG] /api/data raw response:', text);
+      } catch (e) {
+        return alert('Fetch error: ' + e.message);
+      }
+
+      let obj;
+      try {
+        obj = JSON.parse(text);
+      } catch (e) {
+        return alert('Invalid JSON response:\n' + text);
+      }
+      if (!resp.ok) {
+        return alert('Server error: ' + (obj.error || resp.status));
+      }
+
+      lastTicker = ticker;
+      resultDiv.style.display = 'block';
+      aiDiv.style.display = 'none';
+      aiDiv.textContent = '';
+
+      headerH2.textContent = `Analysis for ${obj.name}`;
+      priceDiv.textContent = `Current Price: $${obj.price.toLocaleString(undefined, {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      })}`;
+      recDiv.textContent = `Recommendation: ${obj.recommendation.toUpperCase()}`;
+
+      let txt = '';
+      for (let key in obj.factors) {
+        let val = obj.factors[key];
+        if (typeof val === 'number') {
+          val = (key.includes('return') || key.includes('rsi'))
+            ? val.toFixed(2) + '%'
+            : val.toFixed(2);
+        }
+        txt += `${labels[key] || key}: ${val}\n`;
+      }
+      factorsDiv.textContent = txt;
+    }
+
+    async function doAI() {
+      if (!lastTicker) return alert('Run Analyze first.');
+
+      let resp, text;
+      try {
+        resp = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: lastTicker })
+        });
+        text = await resp.text();
+        console.log('[DEBUG] /api/analyze raw response:', text);
+      } catch (e) {
+        return alert('Fetch error: ' + e.message);
+      }
+
+      let obj;
+      try {
+        obj = JSON.parse(text);
+      } catch (e) {
+        return alert('Invalid JSON response:\n' + text);
+      }
+      if (!resp.ok) {
+        return alert('Server error: ' + (obj.error || resp.status));
+      }
+
+      aiDiv.textContent = obj.analysis;
+      aiDiv.style.display = 'block';
+    }
+
+    analyzeBtn.addEventListener('click', doAnalyze);
+    aiBtn.addEventListener('click', doAI);
+    tickerInput.addEventListener('keyup', e => {
+      if (e.key === 'Enter') doAnalyze();
+    });
+  </script>
+</body>
+
+</html>
